@@ -1,0 +1,30 @@
+.monitoringGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  min-height: calc(100vh - 56px);
+  overflow: auto;
+  padding-bottom: 16px;
+}
+
+.monitoringFullWidth {
+  grid-column: span 1;
+}
+
+/* Tablet and up: 2 columns */
+@media (min-width: 768px) {
+  .monitoringGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .monitoringFullWidth {
+    grid-column: span 2;
+  }
+}
+
+/* Large screens: maintain layout */
+@media (min-width: 1440px) {
+  .monitoringGrid {
+    max-width: 1920px;
+    margin: 0 auto;
+  }
+}

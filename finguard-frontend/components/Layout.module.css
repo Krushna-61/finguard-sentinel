@@ -1,0 +1,10 @@
+.layoutWrapper {
+  margin-left: 0;
+  transition: margin-left 0.3s ease-in-out;
+}
+
+@media (min-width: 1024px) {
+  .layoutWrapper {
+    margin-left: 220px;
+  }
+}

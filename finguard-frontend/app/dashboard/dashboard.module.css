@@ -1,0 +1,58 @@
+.dashboardGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  min-height: calc(100vh - 56px);
+}
+
+.dashboardColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dashboardLeft,
+.dashboardCenter {
+  overflow: auto;
+}
+
+.dashboardRight {
+  overflow: hidden;
+}
+
+/* Tablet: 2 columns */
+@media (min-width: 768px) {
+  .dashboardGrid {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "left center"
+      "right right";
+  }
+  .dashboardLeft {
+    grid-area: left;
+  }
+  .dashboardCenter {
+    grid-area: center;
+  }
+  .dashboardRight {
+    grid-area: right;
+  }
+}
+
+/* Desktop: 3 columns */
+@media (min-width: 1024px) {
+  .dashboardGrid {
+    grid-template-columns: 25% 50% 25%;
+    grid-template-areas: "left center right";
+    height: calc(100vh - 56px);
+    overflow: hidden;
+  }
+}
+
+/* Large screens: maintain proportions */
+@media (min-width: 1440px) {
+  .dashboardGrid {
+    max-width: 1920px;
+    margin: 0 auto;
+  }
+}

@@ -1,0 +1,97 @@
+@keyframes flash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes slideDown {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+
+.responsiveIndicator {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+}
+
+.responsiveHeader {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+}
+
+.responsiveAlert {
+  position: fixed;
+  left: 0;
+  right: 0;
+  width: 100%;
+  animation: slideDown 0.3s ease-out;
+}
+
+.responsiveCompliance {
+  position: fixed;
+  left: 0;
+  right: 0;
+  width: 100%;
+}
+
+.hideMobile {
+  display: flex;
+}
+
+.responsiveTitle {
+  font-size: 11px;
+}
+
+.responsiveSubtitle {
+  display: block;
+}
+
+@media (min-width: 1024px) {
+  .responsiveIndicator {
+    left: 220px;
+    right: 0;
+    width: auto;
+  }
+  
+  .responsiveHeader {
+    left: 220px;
+    right: 0;
+    width: auto;
+  }
+  
+  .responsiveAlert {
+    left: 220px;
+    right: 0;
+    width: auto;
+  }
+  
+  .responsiveCompliance {
+    left: 220px;
+    right: 0;
+    width: auto;
+  }
+}
+
+@media (max-width: 768px) {
+  .hideMobile {
+    display: none !important;
+  }
+  
+  .responsiveTitle {
+    font-size: 9px !important;
+  }
+  
+  .responsiveSubtitle {
+    display: none !important;
+  }
+}

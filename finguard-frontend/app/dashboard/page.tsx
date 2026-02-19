@@ -4,30 +4,34 @@ import { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
 import StatusBadge from '@/components/StatusBadge';
 import RiskGauge from '@/components/RiskGauge';
-import AuditTable from '@/components/AuditTable';
 import DriftChart from '@/components/DriftChart';
 import BiasChart from '@/components/BiasChart';
-import RiskSparkline from '@/components/RiskSparkline';
-import RiskUpdatePanel from '@/components/RiskUpdatePanel';
 import { useSystem } from '@/contexts/SystemContext';
+import styles from './dashboard.module.css';
 
 export default function DashboardPage() {
   const { 
-    mlData, 
-    llmData, 
-    compositeRisk, 
-    riskTier, 
-    riskBreakdown, 
-    auditLogs, 
-    systemStatus, 
-    riskHistory, 
-    riskUpdate,
-    systemStabilityScore,
-    metricConfidence,
-    complianceFlag,
+    currentInference,
+    driftHistory,
+    biasHistory,
+    isConnected,
+    error,
   } = useSystem();
-  const [animatedRisk, setAnimatedRisk] = useState(compositeRisk);
+  
+  const [animatedRisk, setAnimatedRisk] = useState(0);
   const [mounted, setMounted] = useState(false);
+  
+  // Extract values from currentInference - NO DEFAULTS
+  const compositeRisk = currentInference?.composite_score ?? null;
+  const riskTier = currentInference?.tier ?? null;
+  const breakdown = currentInference?.breakdown ?? null;
+  const piiDetected = currentInference?.pii_detected ?? false;
+  const driftScore = currentInference?.drift_score ?? null;
+  const biasScore = currentInference?.bias_score ?? null;
+  const toxicityScore = currentInference?.toxicity_score ?? null;
+  const hallucinationScore = currentInference?.hallucination_score ?? null;
+  const latencyMs = currentInference?.latency_ms ?? null;
+  const tokenUsage = currentInference?.token_usage ?? null;
 
   useEffect(() => {
     setMounted(true);
@@ -35,6 +39,11 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!mounted) return;
+    
+    if (compositeRisk === null) {
+      setAnimatedRisk(0);
+      return;
+    }
     
     const duration = 500;
     const steps = 20;
@@ -47,30 +56,38 @@ export default function DashboardPage() {
         setAnimatedRisk(compositeRisk);
         clearInterval(timer);
       } else {
-        setAnimatedRisk(prev => prev + increment);
+        setAnimatedRisk((prev: number) => prev + increment);
       }
     }, duration / steps);
 
     return () => clearInterval(timer);
-  }, [compositeRisk, mounted]);
+  }, [compositeRisk, mounted, animatedRisk]);
 
   const getBorderColor = () => {
-    if (systemStatus === 'critical') return '#EF4444';
-    if (systemStatus === 'warning') return '#F59E0B';
+    if (!riskTier) return '#1A1A1A';
+    if (riskTier === 'CRITICAL') return '#EF4444';
+    if (riskTier === 'HIGH' || riskTier === 'ELEVATED') return '#F59E0B';
     return '#1A1A1A';
   };
 
   const getPrimaryDriver = () => {
+    if (!breakdown) {
+      return {
+        primary: { name: 'No Data', contribution: 0, confidence: 0 },
+        secondary: { name: 'No Data', contribution: 0 },
+      };
+    }
+    
     // PII always dominates when detected
-    if (llmData?.piiDetected) {
-      const total = riskBreakdown.driftImpact + riskBreakdown.biasImpact + riskBreakdown.piiImpact + riskBreakdown.latencyImpact || 1;
-      const piiContribution = Math.round((riskBreakdown.piiImpact / total) * 100);
+    if (piiDetected) {
+      const total = breakdown.drift + breakdown.bias + breakdown.pii + breakdown.latency || 1;
+      const piiContribution = Math.round((breakdown.pii / total) * 100);
       
       // Find secondary driver
       const others = [
-        { name: 'Drift Volatility', value: riskBreakdown.driftImpact },
-        { name: 'Bias Variance', value: riskBreakdown.biasImpact },
-        { name: 'Latency Instability', value: riskBreakdown.latencyImpact },
+        { name: 'Drift Volatility', value: breakdown.drift },
+        { name: 'Bias Variance', value: breakdown.bias },
+        { name: 'Latency Instability', value: breakdown.latency },
       ].sort((a, b) => b.value - a.value);
       
       const secondaryContribution = Math.round((others[0].value / total) * 100);
@@ -83,9 +100,9 @@ export default function DashboardPage() {
     
     // Normal attribution without PII
     const impacts = [
-      { name: 'Drift Volatility', value: riskBreakdown.driftImpact },
-      { name: 'Bias Variance', value: riskBreakdown.biasImpact },
-      { name: 'Latency Instability', value: riskBreakdown.latencyImpact },
+      { name: 'Drift Volatility', value: breakdown.drift },
+      { name: 'Bias Variance', value: breakdown.bias },
+      { name: 'Latency Instability', value: breakdown.latency },
     ];
     const sorted = impacts.sort((a, b) => b.value - a.value);
     const total = sorted.reduce((sum, i) => sum + i.value, 0) || 1;
@@ -103,15 +120,12 @@ export default function DashboardPage() {
   };
 
   const getRiskProjection = () => {
-    if (riskHistory.length < 3) return { projected: compositeRisk, trend: 'Stabilizing' };
-    
-    const recent = riskHistory.slice(-10);
-    const slope = (recent[recent.length - 1] - recent[0]) / recent.length;
-    const projected = Math.max(0, Math.min(100, Math.round(compositeRisk + slope * 5)));
-    
-    let trend = 'Stabilizing';
-    if (slope > 2) trend = 'Escalating';
-    else if (slope < -2) trend = 'Recovering';
+    if (compositeRisk === null) {
+      return { projected: 0, trend: 'No Data' };
+    }
+    // Simple projection based on current risk
+    const projected = Math.round(compositeRisk);
+    const trend = compositeRisk > 60 ? 'Elevated' : 'Stabilizing';
     
     return { projected, trend };
   };
@@ -119,41 +133,23 @@ export default function DashboardPage() {
   const attribution = getPrimaryDriver();
   const projection = getRiskProjection();
 
-  const getMetricColor = (value: number, threshold: number, goodColor: string, badColor: string) => {
-    if (!mounted) return goodColor;
-    if (compositeRisk >= 80) return '#F59E0B';
-    return value < threshold ? badColor : goodColor;
-  };
 
-  const getLLMMetricColor = (value: number, threshold: number, goodColor: string, warnColor: string, badColor: string) => {
-    if (!mounted) return goodColor;
-    if (compositeRisk >= 80) return '#F59E0B';
-    if (value > threshold + 20) return badColor;
-    if (value > threshold) return warnColor;
-    return goodColor;
-  };
+
+  // Show loading or error states
+  if (!isConnected && !currentInference) {
+    return (
+      <Layout>
+        <div style={{ padding: '20px', textAlign: 'center', color: '#666666' }}>
+          {error ? `Error: ${error}` : 'Connecting to backend...'}
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
-      {riskUpdate && (
-        <RiskUpdatePanel
-          oldRisk={riskUpdate.oldRisk}
-          newRisk={riskUpdate.newRisk}
-          oldBreakdown={riskUpdate.oldBreakdown}
-          newBreakdown={riskUpdate.newBreakdown}
-          oldTier={riskUpdate.oldTier}
-          newTier={riskUpdate.newTier}
-        />
-      )}
-      
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '25% 50% 25%',
-        gap: '8px',
-        height: 'calc(100vh - 56px)',
-        overflow: 'hidden',
-      }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflow: 'auto' }}>
+      <div className={styles.dashboardGrid}>
+        <div className={`${styles.dashboardColumn} ${styles.dashboardLeft}`}>
           <div style={{
             background: '#0A0A0A',
             border: `1px solid ${getBorderColor()}`,
@@ -173,10 +169,23 @@ export default function DashboardPage() {
               RISK INDEX
             </div>
             <div style={{ height: '140px', marginBottom: '8px' }}>
-              <RiskGauge score={mounted ? Math.round(animatedRisk) : compositeRisk} />
+              <RiskGauge score={compositeRisk !== null ? Math.round(mounted ? animatedRisk : compositeRisk) : 0} />
             </div>
             <div style={{ textAlign: 'center', marginBottom: '12px' }}>
-              <StatusBadge status={riskTier.toLowerCase() as any} />
+              {riskTier ? (
+                <StatusBadge status={riskTier.toLowerCase() as any} />
+              ) : (
+                <div style={{ 
+                  fontSize: '10px', 
+                  color: '#666666', 
+                  padding: '4px 8px',
+                  border: '1px solid #1A1A1A',
+                  background: '#000000',
+                  fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace'
+                }}>
+                  NO DATA
+                </div>
+              )}
             </div>
             <div style={{
               fontSize: '9px',
@@ -191,19 +200,27 @@ export default function DashboardPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace' }}>
                 <span style={{ color: '#666666' }}>DRIFT</span>
-                <span style={{ color: riskBreakdown.driftImpact > 50 ? '#EF4444' : '#22C55E' }}>{riskBreakdown.driftImpact}</span>
+                <span style={{ color: breakdown && breakdown.drift > 50 ? '#EF4444' : '#22C55E' }}>
+                  {breakdown ? Math.round(breakdown.drift) : '--'}
+                </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace' }}>
                 <span style={{ color: '#666666' }}>BIAS</span>
-                <span style={{ color: riskBreakdown.biasImpact > 50 ? '#EF4444' : '#22C55E' }}>{riskBreakdown.biasImpact}</span>
+                <span style={{ color: breakdown && breakdown.bias > 50 ? '#EF4444' : '#22C55E' }}>
+                  {breakdown ? Math.round(breakdown.bias) : '--'}
+                </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace' }}>
                 <span style={{ color: '#666666' }}>PII</span>
-                <span style={{ color: riskBreakdown.piiImpact > 0 ? '#EF4444' : '#22C55E' }}>{riskBreakdown.piiImpact}</span>
+                <span style={{ color: breakdown && breakdown.pii > 0 ? '#EF4444' : '#22C55E' }}>
+                  {breakdown ? Math.round(breakdown.pii) : '--'}
+                </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9px', fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace' }}>
                 <span style={{ color: '#666666' }}>LATENCY</span>
-                <span style={{ color: riskBreakdown.latencyImpact > 50 ? '#EF4444' : '#22C55E' }}>{riskBreakdown.latencyImpact}</span>
+                <span style={{ color: breakdown && breakdown.latency > 50 ? '#EF4444' : '#22C55E' }}>
+                  {breakdown ? Math.round(breakdown.latency) : '--'}
+                </span>
               </div>
             </div>
           </div>
@@ -222,9 +239,11 @@ export default function DashboardPage() {
               letterSpacing: '0.5px',
               fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace',
             }}>
-              RISK TRAJECTORY — LAST 60s
+              CURRENT RISK SCORE
             </div>
-            <RiskSparkline data={riskHistory} />
+            <div style={{ fontSize: '24px', fontWeight: 700, color: '#3B82F6', fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace' }}>
+              {compositeRisk !== null ? Math.round(compositeRisk) : '--'}
+            </div>
           </div>
 
           <div style={{
@@ -301,7 +320,7 @@ export default function DashboardPage() {
 
           <div style={{
             background: '#0A0A0A',
-            border: `1px solid ${llmData?.piiDetected ? '#EF4444' : '#1A1A1A'}`,
+            border: `1px solid ${piiDetected ? '#EF4444' : '#1A1A1A'}`,
             borderRadius: '0px',
             padding: '10px',
           }}>
@@ -318,8 +337,8 @@ export default function DashboardPage() {
               PII DETECTION
             </div>
             <StatusBadge
-              status={llmData?.piiDetected ? 'failure' : 'success'}
-              label={llmData?.piiDetected ? 'DETECTED' : 'CLEAR'}
+              status={piiDetected ? 'failure' : 'success'}
+              label={piiDetected ? 'DETECTED' : 'CLEAR'}
             />
           </div>
 
@@ -358,13 +377,12 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflow: 'auto' }}>
+        <div className={`${styles.dashboardColumn} ${styles.dashboardCenter}`}>
           <div style={{
             background: '#0A0A0A',
-            border: `1px solid ${systemStatus === 'warning' || systemStatus === 'critical' ? '#EF4444' : '#1A1A1A'}`,
+            border: '1px solid #1A1A1A',
             borderRadius: '0px',
             padding: '10px',
-            height: '260px',
           }}>
             <div style={{
               fontSize: '10px',
@@ -378,8 +396,14 @@ export default function DashboardPage() {
             }}>
               MODEL DRIFT TREND
             </div>
-            <div style={{ height: 'calc(100% - 24px)' }}>
-              <DriftChart data={mlData?.drift || []} />
+            <div style={{ height: '180px' }}>
+              {driftHistory.length > 0 ? (
+                <DriftChart data={driftHistory} />
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#666666', fontSize: '12px' }}>
+                  No data available
+                </div>
+              )}
             </div>
           </div>
 
@@ -388,7 +412,6 @@ export default function DashboardPage() {
             border: '1px solid #1A1A1A',
             borderRadius: '0px',
             padding: '10px',
-            height: '200px',
           }}>
             <div style={{
               fontSize: '10px',
@@ -402,14 +425,20 @@ export default function DashboardPage() {
             }}>
               BIAS ANALYSIS
             </div>
-            <div style={{ height: 'calc(100% - 24px)' }}>
-              <BiasChart data={mlData?.bias || []} />
+            <div style={{ height: '180px' }}>
+              {biasHistory.length > 0 ? (
+                <BiasChart data={biasHistory} />
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#666666', fontSize: '12px' }}>
+                  No data available
+                </div>
+              )}
             </div>
           </div>
 
           <div style={{
             background: '#0A0A0A',
-            border: `1px solid ${mounted && compositeRisk >= 80 ? '#F59E0B' : '#1A1A1A'}`,
+            border: '1px solid #1A1A1A',
             borderRadius: '0px',
             padding: '10px',
           }}>
@@ -422,78 +451,17 @@ export default function DashboardPage() {
               fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace',
               borderTop: '1px solid #1A1A1A',
               paddingTop: '6px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
             }}>
-              <span>ML METRICS</span>
-              {mounted && compositeRisk >= 80 && (
-                <span style={{ fontSize: '8px', color: '#F59E0B' }}>UNDER GOVERNANCE STRESS</span>
-              )}
+              DRIFT SCORE
             </div>
-            {mounted && complianceFlag && (
-              <div style={{
-                fontSize: '8px',
-                color: '#EF4444',
-                background: 'rgba(239, 68, 68, 0.1)',
-                padding: '4px 6px',
-                marginBottom: '8px',
-                border: '1px solid #EF4444',
-                fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace',
-              }}>
-                REGULATORY INCIDENT ACTIVE
-              </div>
-            )}
-            {mounted && (
-              <div style={{ 
-                fontSize: '8px', 
-                color: '#666666', 
-                marginBottom: '8px',
-                fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace',
-              }}>
-                METRIC CONFIDENCE: {Math.round(metricConfidence * 100)}%
-              </div>
-            )}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-              <div>
-                <div style={{ fontSize: '10px', color: '#666666', marginBottom: '4px', fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace' }}>ACCURACY</div>
-                <div style={{ 
-                  fontSize: '16px', 
-                  fontWeight: 700, 
-                  color: getMetricColor(mlData?.metrics.accuracy || 0, 0.85, '#22C55E', '#EF4444'), 
-                  fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace' 
-                }}>
-                  {(mlData?.metrics.accuracy || 0).toFixed(3)}
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: '10px', color: '#666666', marginBottom: '4px', fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace' }}>PRECISION</div>
-                <div style={{ 
-                  fontSize: '16px', 
-                  fontWeight: 700, 
-                  color: getMetricColor(mlData?.metrics.precision || 0, 0.85, '#3B82F6', '#EF4444'), 
-                  fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace' 
-                }}>
-                  {(mlData?.metrics.precision || 0).toFixed(3)}
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: '10px', color: '#666666', marginBottom: '4px', fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace' }}>RECALL</div>
-                <div style={{ 
-                  fontSize: '16px', 
-                  fontWeight: 700, 
-                  color: getMetricColor(mlData?.metrics.recall || 0, 0.85, '#3B82F6', '#EF4444'), 
-                  fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace' 
-                }}>
-                  {(mlData?.metrics.recall || 0).toFixed(3)}
-                </div>
-              </div>
+            <div style={{ fontSize: '32px', fontWeight: 700, color: driftScore !== null && driftScore > 0.5 ? '#EF4444' : '#22C55E', fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace' }}>
+              {driftScore !== null ? driftScore.toFixed(3) : '--'}
             </div>
           </div>
 
           <div style={{
             background: '#0A0A0A',
-            border: `1px solid ${mounted && compositeRisk >= 80 ? '#F59E0B' : '#1A1A1A'}`,
+            border: '1px solid #1A1A1A',
             borderRadius: '0px',
             padding: '10px',
           }}>
@@ -506,14 +474,31 @@ export default function DashboardPage() {
               fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace',
               borderTop: '1px solid #1A1A1A',
               paddingTop: '6px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
             }}>
-              <span>LLM METRICS</span>
-              {mounted && compositeRisk >= 80 && (
-                <span style={{ fontSize: '8px', color: '#F59E0B' }}>UNDER GOVERNANCE STRESS</span>
-              )}
+              BIAS SCORE
+            </div>
+            <div style={{ fontSize: '32px', fontWeight: 700, color: biasScore !== null && biasScore > 0.5 ? '#EF4444' : '#22C55E', fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace' }}>
+              {biasScore !== null ? biasScore.toFixed(3) : '--'}
+            </div>
+          </div>
+
+          <div style={{
+            background: '#0A0A0A',
+            border: '1px solid #1A1A1A',
+            borderRadius: '0px',
+            padding: '10px',
+          }}>
+            <div style={{
+              fontSize: '10px',
+              color: '#666666',
+              textTransform: 'uppercase',
+              marginBottom: '8px',
+              letterSpacing: '0.5px',
+              fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace',
+              borderTop: '1px solid #1A1A1A',
+              paddingTop: '6px',
+            }}>
+              LLM METRICS
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
               <div>
@@ -521,16 +506,16 @@ export default function DashboardPage() {
                 <div style={{ 
                   fontSize: '16px', 
                   fontWeight: 700, 
-                  color: mounted && compositeRisk >= 80 ? '#F59E0B' : (llmData?.latency || 0) > 1000 ? '#EF4444' : '#3B82F6', 
+                  color: latencyMs !== null && latencyMs > 1000 ? '#EF4444' : '#3B82F6', 
                   fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace' 
                 }}>
-                  {Math.round(llmData?.latency || 0)}<span style={{ fontSize: '10px', color: '#666666' }}>ms</span>
+                  {latencyMs !== null ? Math.round(latencyMs) : '--'}<span style={{ fontSize: '10px', color: '#666666' }}>ms</span>
                 </div>
               </div>
               <div>
                 <div style={{ fontSize: '10px', color: '#666666', marginBottom: '4px', fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace' }}>TOKENS</div>
                 <div style={{ fontSize: '16px', fontWeight: 700, color: '#3B82F6', fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace' }}>
-                  {llmData?.tokenUsage || 0}
+                  {tokenUsage !== null ? tokenUsage : '--'}
                 </div>
               </div>
               <div>
@@ -538,10 +523,10 @@ export default function DashboardPage() {
                 <div style={{
                   fontSize: '16px',
                   fontWeight: 700,
-                  color: getLLMMetricColor(llmData?.hallucinationScore || 0, 30, '#22C55E', '#F59E0B', '#EF4444'),
+                  color: hallucinationScore !== null && hallucinationScore > 50 ? '#EF4444' : hallucinationScore !== null && hallucinationScore > 30 ? '#F59E0B' : '#22C55E',
                   fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace'
                 }}>
-                  {Math.round(llmData?.hallucinationScore || 0)}
+                  {hallucinationScore !== null ? Math.round(hallucinationScore) : '--'}
                 </div>
               </div>
               <div>
@@ -549,17 +534,17 @@ export default function DashboardPage() {
                 <div style={{
                   fontSize: '16px',
                   fontWeight: 700,
-                  color: getLLMMetricColor(llmData?.toxicityScore || 0, 30, '#22C55E', '#F59E0B', '#EF4444'),
+                  color: toxicityScore !== null && toxicityScore > 50 ? '#EF4444' : toxicityScore !== null && toxicityScore > 30 ? '#F59E0B' : '#22C55E',
                   fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace'
                 }}>
-                  {Math.round(llmData?.toxicityScore || 0)}
+                  {toxicityScore !== null ? Math.round(toxicityScore) : '--'}
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflow: 'hidden' }}>
+        <div className={`${styles.dashboardColumn} ${styles.dashboardRight}`}>
           <div style={{
             background: '#0A0A0A',
             border: '1px solid #1A1A1A',
@@ -580,19 +565,29 @@ export default function DashboardPage() {
               borderTop: '1px solid #1A1A1A',
               paddingTop: '6px',
             }}>
-              AUDIT TRAIL
+              TRIGGERED RULES
             </div>
-            <div style={{ flex: 1, overflow: 'hidden' }}>
-              <AuditTable entries={auditLogs.slice(0, 5)} maxHeight={9999} />
-            </div>
-            <div style={{
-              fontSize: '8px',
-              color: '#666666',
-              textAlign: 'center',
-              marginTop: '8px',
-              fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace',
-            }}>
-              LAST 5 ENTRIES — VIEW ALL IN AUDIT
+            <div style={{ flex: 1, overflow: 'auto' }}>
+              {currentInference?.triggered_rules && currentInference.triggered_rules.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {currentInference.triggered_rules.map((rule, idx) => (
+                    <div key={idx} style={{
+                      fontSize: '9px',
+                      color: '#F59E0B',
+                      fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace',
+                      padding: '4px',
+                      background: 'rgba(245, 158, 11, 0.1)',
+                      border: '1px solid rgba(245, 158, 11, 0.3)',
+                    }}>
+                      {rule}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ fontSize: '9px', color: '#666666', fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace' }}>
+                  No rules triggered
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSystem } from '@/contexts/SystemContext';
+import styles from './Header.module.css';
 
 interface HeaderProps {
   title: string;
@@ -13,15 +14,13 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
   const [uptime, setUptime] = useState(0);
   const [mounted, setMounted] = useState(false);
   const { 
-    riskTier,
-    alertMessage,
-    complianceFlag,
-    triggerDriftSpike,
-    triggerPIIBreach,
-    triggerBiasEscalation,
-    triggerLatencySurge,
-    resetSystem 
+    currentInference,
+    isConnected,
+    error,
   } = useSystem();
+  
+  const riskTier = currentInference?.tier || 'STABLE';
+  const piiDetected = currentInference?.pii_detected || false;
 
   useEffect(() => {
     setMounted(true);
@@ -69,41 +68,37 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
   return (
     <>
       {(riskTier === 'HIGH' || riskTier === 'CRITICAL') && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: '220px',
-          right: 0,
-          height: '2px',
-          background: '#EF4444',
-          zIndex: 11,
-          animation: riskTier === 'CRITICAL' ? 'flash 1s ease-in-out infinite' : 'none',
-        }}>
-          <style jsx>{`
-            @keyframes flash {
-              0%, 100% { opacity: 1; }
-              50% { opacity: 0.3; }
-            }
-          `}</style>
-        </div>
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            right: 0,
+            height: '2px',
+            background: '#EF4444',
+            zIndex: 11,
+            animation: riskTier === 'CRITICAL' ? 'flash 1s ease-in-out infinite' : 'none',
+          }}
+          className={styles.responsiveIndicator}
+        />
       )}
 
-      <div style={{
-        height: '56px',
-        background: getHeaderBg(),
-        borderBottom: `1px solid ${riskTier === 'ELEVATED' ? '#F59E0B' : '#1A1A1A'}`,
-        padding: '0 12px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        position: 'fixed',
-        top: 0,
-        left: '220px',
-        right: 0,
-        zIndex: 10,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div>
+      <div 
+        style={{
+          height: '56px',
+          background: getHeaderBg(),
+          borderBottom: `1px solid ${riskTier === 'ELEVATED' ? '#F59E0B' : '#1A1A1A'}`,
+          padding: '0 12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          position: 'fixed',
+          top: 0,
+          zIndex: 10,
+        }}
+        className={styles.responsiveHeader}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: 0 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
             <h1 style={{
               fontSize: '11px',
               fontWeight: 700,
@@ -112,7 +107,12 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
               textTransform: 'uppercase',
               letterSpacing: '1px',
               fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace',
-            }}>
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+            className={styles.responsiveTitle}
+            >
               {title}
             </h1>
             {subtitle && (
@@ -123,22 +123,30 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
                 textTransform: 'uppercase',
                 letterSpacing: '0.5px',
                 fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace',
-              }}>
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+              className={styles.responsiveSubtitle}
+              >
                 {subtitle}
               </p>
             )}
           </div>
           <div style={{
             fontSize: '8px',
-            color: '#666666',
+            color: isConnected ? '#22C55E' : '#EF4444',
             textTransform: 'uppercase',
             letterSpacing: '0.5px',
             fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace',
             padding: '2px 6px',
-            border: '1px solid #1A1A1A',
+            border: `1px solid ${isConnected ? '#22C55E' : '#EF4444'}`,
             background: '#000000',
-          }}>
-            SIMULATION MODE ACTIVE
+            whiteSpace: 'nowrap',
+          }}
+          className={styles.hideMobile}
+          >
+            {isConnected ? 'BACKEND CONNECTED' : 'BACKEND OFFLINE'}
           </div>
           <div style={{
             display: 'flex',
@@ -164,94 +172,10 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
             }}>
               {riskTier}
             </span>
-            <style jsx>{`
-              @keyframes pulse {
-                0%, 100% { opacity: 1; }
-                50% { opacity: 0.5; }
-              }
-            `}</style>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{ display: 'flex', gap: '4px' }}>
-            <button
-              onClick={triggerDriftSpike}
-              style={{
-                background: '#0A0A0A',
-                border: '1px solid #1A1A1A',
-                color: '#F59E0B',
-                padding: '4px 8px',
-                fontSize: '8px',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-                fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace',
-              }}
-            >
-              DRIFT
-            </button>
-            <button
-              onClick={triggerPIIBreach}
-              style={{
-                background: '#0A0A0A',
-                border: '1px solid #1A1A1A',
-                color: '#EF4444',
-                padding: '4px 8px',
-                fontSize: '8px',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-                fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace',
-              }}
-            >
-              PII
-            </button>
-            <button
-              onClick={triggerBiasEscalation}
-              style={{
-                background: '#0A0A0A',
-                border: '1px solid #1A1A1A',
-                color: '#F59E0B',
-                padding: '4px 8px',
-                fontSize: '8px',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-                fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace',
-              }}
-            >
-              BIAS
-            </button>
-            <button
-              onClick={triggerLatencySurge}
-              style={{
-                background: '#0A0A0A',
-                border: '1px solid #1A1A1A',
-                color: '#F59E0B',
-                padding: '4px 8px',
-                fontSize: '8px',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-                fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace',
-              }}
-            >
-              LATENCY
-            </button>
-            <button
-              onClick={resetSystem}
-              style={{
-                background: '#0A0A0A',
-                border: '1px solid #1A1A1A',
-                color: '#22C55E',
-                padding: '4px 8px',
-                fontSize: '8px',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-                fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace',
-              }}
-            >
-              RESET
-            </button>
-          </div>
-
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }} className={styles.hideMobile}>
           <div style={{
             display: 'flex',
             gap: '16px',
@@ -271,37 +195,10 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
         </div>
       </div>
 
-      {alertMessage && (
+      {piiDetected && (
         <div style={{
           position: 'fixed',
           top: '56px',
-          left: '220px',
-          right: 0,
-          background: riskTier === 'CRITICAL' ? '#EF4444' : '#F59E0B',
-          color: '#000000',
-          padding: '8px 12px',
-          fontSize: '10px',
-          fontWeight: 700,
-          textAlign: 'center',
-          zIndex: 9,
-          fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace',
-          animation: 'slideDown 0.3s ease-out',
-        }}>
-          {alertMessage}
-          <style jsx>{`
-            @keyframes slideDown {
-              from { transform: translateY(-100%); }
-              to { transform: translateY(0); }
-            }
-          `}</style>
-        </div>
-      )}
-
-      {complianceFlag && (
-        <div style={{
-          position: 'fixed',
-          top: alertMessage ? '88px' : '56px',
-          left: '220px',
           right: 0,
           background: '#EF4444',
           color: '#FFFFFF',
@@ -313,8 +210,30 @@ const Header: React.FC<HeaderProps> = ({ title, subtitle }) => {
           fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace',
           border: '1px solid #DC2626',
           borderTop: 'none',
-        }}>
-          REGULATORY INCIDENT ACTIVE — PII EXPOSURE DETECTED
+        }}
+        className={styles.responsiveCompliance}
+        >
+          PII DETECTED — REGULATORY INCIDENT ACTIVE
+        </div>
+      )}
+
+      {error && (
+        <div style={{
+          position: 'fixed',
+          top: piiDetected ? '88px' : '56px',
+          right: 0,
+          background: '#F59E0B',
+          color: '#000000',
+          padding: '8px 12px',
+          fontSize: '10px',
+          fontWeight: 700,
+          textAlign: 'center',
+          zIndex: 9,
+          fontFamily: '"IBM Plex Mono", "Roboto Mono", monospace',
+        }}
+        className={styles.responsiveAlert}
+        >
+          {error}
         </div>
       )}
     </>

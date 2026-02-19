@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: finguard-postgres
+    environment:
+      POSTGRES_USER: finguard
+      POSTGRES_PASSWORD: StrongPass123
+      POSTGRES_DB: finguard_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finguard"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - finguard-network
+
+  backend:
+    build:
+      context: ./finguard-backend
+      dockerfile: Dockerfile
+    container_name: finguard-backend
+    environment:
+      DATABASE_URL: postgresql+psycopg2://finguard:StrongPass123@postgres:5432/finguard_db
+      HF_API_TOKEN: ${HF_API_TOKEN}
+      USE_LOCAL_MODELS: "false"
+      MODEL_DEVICE: cpu
+      FINGUARD_API_KEY: ${FINGUARD_API_KEY:-dev-key-12345}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-this-in-production}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      RATE_LIMIT_PER_MINUTE: 100
+      ENV: production
+      LOG_LEVEL: INFO
+      DEBUG: "false"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - model_cache:/app/.cache
+    networks:
+      - finguard-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./finguard-frontend
+      dockerfile: Dockerfile
+    container_name: finguard-frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - finguard-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  model_cache:
+
+networks:
+  finguard-network:
+    driver: bridge
